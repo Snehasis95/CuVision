@@ -1,0 +1,10 @@
+build/
+imgproc
+imgproc.exe
+*.o
+*.obj
+data/*.ppm
+data/*.pgm
+data/*.png
+host_test
+host_test.exe
