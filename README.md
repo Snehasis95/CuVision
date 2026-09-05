@@ -1,5 +1,7 @@
 # CuVision
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1X1xrtIFfLz6XMWF-eg_I4g-DyRC9HYmo#scrollTo=u1HEejI1B74P)
+
 A CUDA image-processing engine built to make the cost of a memory-access
 pattern visible. Every operation ships with a single-threaded CPU reference and
 two or three GPU kernels that compute exactly the same result by different
@@ -10,6 +12,11 @@ throughput next to the maximum per-pixel error against the CPU oracle, so a
 
 No third-party dependencies, no sample images to download. Images are binary
 netpbm (P6 for RGB, P5 for grayscale) and the test pattern is generated.
+
+No NVIDIA card handy? The badge above opens
+[`notebooks/CuVision.ipynb`](notebooks/CuVision.ipynb) on a free Colab GPU — it
+clones, builds, runs the tests, renders each operation's output, and walks
+through reading the benchmark table.
 
 ## Operations
 
@@ -26,7 +33,8 @@ reads the same entry at once, which broadcasts in a single cycle.
 
 ## Build
 
-Needs a CUDA toolkit and an NVIDIA GPU.
+Needs a CUDA toolkit and an NVIDIA GPU. To skip this entirely, run the
+[Colab notebook](https://colab.research.google.com/github/Snehasis95/CuVision/blob/main/notebooks/CuVision.ipynb).
 
 ```sh
 make                      # -arch=native, needs CUDA >= 11.5
@@ -117,4 +125,5 @@ src/
   cpu_ops.cpp       reference implementations (the correctness oracle)
   kernels/          grayscale.cu blur.cu sobel.cu histogram.cu
 tests/host_test.cpp
+notebooks/CuVision.ipynb   end-to-end walkthrough on a Colab GPU
 ```

@@ -8,3 +8,4 @@ data/*.pgm
 data/*.png
 host_test
 host_test.exe
+.ipynb_checkpoints/
