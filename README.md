@@ -83,8 +83,7 @@ download; intermediates never leave the device.
 `imgproc bench` allocates device buffers once, warms up, then averages `iters`
 launches inside a single `cudaEvent` pair, so the numbers exclude `cudaMalloc`
 and host launch overhead. PCIe transfer cost is measured and reported
-separately — for a single pass over an image it dominates every kernel in the
-table.
+separately.
 
 Each row carries a `max err` column: the largest absolute per-byte difference
 against the CPU implementation. Values of 0–1 are float contraction, not bugs.
@@ -93,10 +92,61 @@ grayscale and Sobel's weights (summing to 8) amplify a 1-LSB input difference �
 which is why the per-kernel comparisons feed the CPU's grayscale to the later
 stages instead.
 
-Not every tiled kernel wins. On a T4 at 16.8 MPixel, the naive Sobel measured
-0.527 ms against 0.783 ms tiled: a 3×3 stencil is small enough that L1 absorbs
-the redundant reads, so tiling only buys a `__syncthreads()` and a halo load.
-`run_sobel` and `run_pipeline` use the naive variant for that reason.
+### Measured: Tesla T4 (sm_75), 4096×4096, r=8, 50 iterations
+
+Full run in [`results/t4-4096.txt`](results/t4-4096.txt). Peak bandwidth
+320 GB/s; the `% peak` column is minimum DRAM traffic over measured time.
+
+| Op | Variant | ms | vs CPU | % peak | max err |
+|---|---|---:|---:|---:|---:|
+| grayscale | cpu | 61.040 | — | — | — |
+| | gpu naive | 0.490 | 125× | 43% | 1 |
+| | **gpu vec4** | **0.251** | **243×** | **84%** | 1 |
+| blur r=8 | cpu | 897.994 | — | — | — |
+| | gpu naive | 14.987 | 60× | — | 1 |
+| | gpu shared tiled | 11.291 | 80× | — | 1 |
+| | **gpu separable** | **1.844** | **487×** | 28% | 1 |
+| sobel | cpu | 178.356 | — | — | — |
+| | **gpu naive** | **0.503** | **355×** | 21% | 0 |
+| | gpu shared tiled | 0.747 | 239× | 14% | 0 |
+| histogram | cpu | 36.893 | — | — | — |
+| | gpu global atomics | 4.619 | 8× | 1% | 0 |
+| | **gpu shared privatised** | **0.183** | **202×** | 29% | 0 |
+
+### What the numbers say
+
+**Coalescing is worth 1.95×, with no change in arithmetic.** `naive` and `vec4`
+compute identical luma; the only difference is that consecutive threads read at
+a 3-byte stride versus three aligned 32-bit loads. Naive reaches 137 GB/s (43%
+of peak), vec4 reaches 267 GB/s (84%) — and 84/43 ≈ 1.95, which is exactly the
+measured speedup. The access pattern *is* the whole result.
+
+**The separable blur wins by algorithm, not by memory.** 289 taps/px against
+34 predicts 8.5×; measured is 8.13×. That near-proportionality says the 2-D
+kernels are bound by load-issue throughput, not DRAM — which is also why
+shared-memory tiling bought only 1.33×. Separable still sits at just 28% of
+peak, so the float intermediate (4 bytes/px, written and
+read back) is the next thing to attack.
+
+**Tiling loses on Sobel — and the bandwidth column explains why.** Naive moves
+its minimum 33.6 MB in 0.503 ms, or 67 GB/s: only 21% of peak, so DRAM was
+never the bottleneck. What bounds it is nine load instructions per output
+pixel. Shared-memory tiling reduces *DRAM traffic* — which was already free —
+while keeping the same nine loads, and adds a halo fetch plus a
+`__syncthreads()`. It is 1.49× slower as a result. `run_sobel` and
+`run_pipeline` use the naive variant for that reason.
+
+**Privatisation is the single biggest kernel win: 25.3×.** Every pixel of a
+16.8 MPixel image contends for 256 global counters in the naive version. Giving
+each block its own shared copy caps global traffic at 256 atomics per block.
+At 0.183 ms it is still only 29% of peak, so multi-copy privatisation (several
+sub-histograms per block) has room left.
+
+**Transfers dominate everything.** 14.0 ms of the 16.6 ms end-to-end is PCIe,
+against 2.6 ms of kernels. And at 4.8 GB/s H2D the transfers themselves are
+leaving ~2.5× on the table: that is pageable-memory throughput, roughly a third
+of what PCIe 3.0 ×16 sustains with pinned buffers. Pinned memory and
+compute/transfer overlap are worth more here than any remaining kernel tuning.
 
 ## Tests
 
@@ -125,5 +175,6 @@ src/
   cpu_ops.cpp       reference implementations (the correctness oracle)
   kernels/          grayscale.cu blur.cu sobel.cu histogram.cu
 tests/host_test.cpp
+results/t4-4096.txt        captured benchmark run (Tesla T4)
 notebooks/CuVision.ipynb   end-to-end walkthrough on a Colab GPU
 ```

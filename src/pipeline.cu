@@ -113,7 +113,7 @@ Image run_sobel(const Image& gray) {
 
     DeviceBuffer<unsigned char> d_src(n), d_dst(n);
     d_src.upload(gray.data.data(), n);
-    // Measured on a T4 at 16.8 MPixel: naive 0.527 ms, tiled 0.783 ms. A 3x3
+    // Measured on a T4 at 16.8 MPixel: naive 0.503 ms, tiled 0.747 ms. A 3x3
     // stencil is small enough that L1 absorbs the redundant reads, so tiling
     // only costs a __syncthreads() and the halo load.
     gpu::sobel_naive(d_src.get(), d_dst.get(), w, h);

@@ -1,0 +1,57 @@
+$ ./imgproc info && ./imgproc bench 4096 4096 8 50
+# Tesla T4 (Google Colab), CUDA toolkit as shipped by Colab, -arch=native
+
+device : Tesla T4 (sm_75)
+  SMs            : 40
+  global memory  : 14.6 GiB
+  peak bandwidth : 320 GB/s (256-bit bus @ 5001 MHz)
+  shared / block : 48 KiB
+device : Tesla T4 (sm_75)
+  SMs            : 40
+  global memory  : 14.6 GiB
+  peak bandwidth : 320 GB/s (256-bit bus @ 5001 MHz)
+  shared / block : 48 KiB
+
+image  : 4096 x 4096 (16.8 MPixel), blur radius 8, sigma 0.00, 50 iterations
+
+PCIe transfer (excluded from the kernel timings below)
+  H2D   50.3 MB :   10.436 ms  (   4.8 GB/s)
+  D2H   16.8 MB :    3.595 ms  (   4.7 GB/s)
+
+RGB -> grayscale  (memory bound: 4 bytes moved per pixel)
+  variant                           ms     MPixel/s     speedup   max err
+  ----------------------------------------------------------------------
+  cpu (single thread)           61.040        274.9           -         -
+  gpu naive (1 px/thread)        0.490      34251.3     124.61x         1
+  gpu vec4 (4 px/thread)         0.251      66892.9     243.37x         1
+  -> vec4 moves 268 GB/s effective; compare against peak above
+
+Gaussian blur r=8  (2-D form is 289 taps/px, separable is 34)
+  variant                           ms     MPixel/s     speedup   max err
+  ----------------------------------------------------------------------
+  cpu (separable)              897.994         18.7           -         -
+  gpu naive (global)            14.987       1119.4       1.00x         1
+  gpu shared-mem tiled          11.291       1486.0       1.33x         1
+  gpu separable (2 passes)       1.844       9098.0       8.13x         1
+  -> separable vs cpu: 487x
+
+Sobel 3x3 magnitude
+  variant                           ms     MPixel/s     speedup   max err
+  ----------------------------------------------------------------------
+  cpu                          178.356         94.1           -         -
+  gpu naive (global)             0.503      33368.3       1.00x         0
+  gpu shared-mem tiled           0.747      22454.8       0.67x         0
+
+256-bin histogram  (atomic contention)
+  variant                           ms     MPixel/s     speedup   max err
+  ----------------------------------------------------------------------
+  cpu (hist + equalise)         36.893        454.8           -         -
+  gpu global atomics             4.619       3632.4       1.00x         0
+  gpu shared (privatised)        0.183      91908.4      25.30x         0
+  -> equalisation (hist + CDF + LUT) max err vs cpu: 0
+
+end-to-end pipeline (gray -> blur -> sobel), one upload + one download
+  kernels only :    2.598 ms
+  + transfers  :   16.629 ms  (transfers dominate)
+  cpu total    : 1137.389 ms
+  max err      :        3
